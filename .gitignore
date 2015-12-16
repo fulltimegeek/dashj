@@ -6,3 +6,9 @@ target
 *.iml
 *.chain
 *.spvchain
+core/.gradle/
+core/build.gradle
+core/gradle/
+core/gradlew
+core/gradlew.bat
+core/settings.gradle

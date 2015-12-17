@@ -12,3 +12,6 @@ core/gradle/
 core/gradlew
 core/gradlew.bat
 core/settings.gradle
+core/local.properties
+core/src/build.gradle
+

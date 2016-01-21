@@ -42,7 +42,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class TransactionInput extends ChildMessage {
     /** Magic sequence number that indicates there is no sequence number. */
     public static final long NO_SEQUENCE = 0xFFFFFFFFL;
-    public static final byte[] EMPTY_ARRAY = new byte[0];
+    private static final byte[] EMPTY_ARRAY = new byte[0];
     // Magic outpoint index that indicates the input is in fact unconnected.
     private static final long UNCONNECTED = 0xFFFFFFFFL;
 
@@ -228,6 +228,11 @@ public class TransactionInput extends ChildMessage {
      */
     public byte[] getScriptBytes() {
         return scriptBytes;
+    }
+
+    /** Clear input scripts, e.g. in preparation for signing. */
+    public void clearScriptBytes() {
+        setScriptBytes(TransactionInput.EMPTY_ARRAY);
     }
 
     /**
@@ -425,6 +430,16 @@ public class TransactionInput extends ChildMessage {
     @Nullable
     public TransactionOutput getConnectedOutput() {
         return getOutpoint().getConnectedOutput();
+    }
+
+    /**
+     * Returns the connected transaction, assuming the input was connected with
+     * {@link TransactionInput#connect(TransactionOutput)} or variants at some point. If it wasn't connected, then
+     * this method returns null.
+     */
+    @Nullable
+    public Transaction getConnectedTransaction() {
+        return getOutpoint().fromTx;
     }
 
     /** Returns a copy of the input detached from its containing transaction, if need be. */

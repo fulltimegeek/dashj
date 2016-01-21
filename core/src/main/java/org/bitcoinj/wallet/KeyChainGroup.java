@@ -249,7 +249,7 @@ public class KeyChainGroup implements KeyBag {
     }
 
     /** Returns the key chain that's used for generation of fresh/current keys. This is always the newest HD chain. */
-    public DeterministicKeyChain getActiveKeyChain() {
+    public final DeterministicKeyChain getActiveKeyChain() {
         if (chains.isEmpty()) {
             if (basic.numKeys() > 0) {
                 log.warn("No HD chain present but random keys are: you probably deserialized an old wallet.");
@@ -484,7 +484,7 @@ public class KeyChainGroup implements KeyBag {
      * from multiple keychains in a multisig relationship.
      * @see org.bitcoinj.wallet.MarriedKeyChain
      */
-    public boolean isMarried() {
+    public final boolean isMarried() {
         return !chains.isEmpty() && getActiveKeyChain().isMarried();
     }
 
@@ -808,7 +808,7 @@ public class KeyChainGroup implements KeyBag {
         for (DeterministicKeyChain chain : chains) {
             chainStrs.add(chain.toString(includePrivateKeys, params));
         }
-        builder.append(Joiner.on(String.format("%n")).join(chainStrs));
+        builder.append(Joiner.on(String.format(Locale.US, "%n")).join(chainStrs));
         return builder.toString();
     }
 

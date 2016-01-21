@@ -20,6 +20,7 @@ package org.bitcoinj.core;
 import com.google.common.base.Objects;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Locale;
 
 /**
  * A message sent by nodes when a message we sent was rejected (ie a transaction had too little fee/was invalid/etc)
@@ -101,7 +102,7 @@ public class RejectMessage extends Message {
         byte[] reasonBytes = reason.getBytes("UTF-8");
         stream.write(new VarInt(reasonBytes.length).encode());
         stream.write(reasonBytes);
-        if (message.equals("block") || message.equals("tx"))
+        if ("block".equals(message) || "tx".equals(message))
             stream.write(messageHash.getReversedBytes());
     }
 
@@ -145,7 +146,7 @@ public class RejectMessage extends Message {
     @Override
     public String toString() {
         Sha256Hash hash = getRejectedObjectHash();
-        return String.format("Reject: %s %s for reason '%s' (%d)", getRejectedMessage(),
+        return String.format(Locale.US, "Reject: %s %s for reason '%s' (%d)", getRejectedMessage(),
             hash != null ? hash : "", getReasonString(), getReasonCode().code);
     }
 

@@ -33,7 +33,6 @@ import org.bitcoinj.core.listeners.WalletChangeEventListener;
 import org.bitcoinj.core.listeners.WalletCoinEventListener;
 import org.bitcoinj.core.TransactionConfidence.*;
 import org.bitcoinj.crypto.*;
-import org.bitcoinj.params.*;
 import org.bitcoinj.script.*;
 import org.bitcoinj.signers.*;
 import org.bitcoinj.store.*;
@@ -121,10 +120,10 @@ public class Wallet extends BaseTaggableObject
     //           to the user in the UI, etc). A transaction can leave dead and move into spent/unspent if there is a
     //           re-org to a chain that doesn't include the double spend.
 
-    @VisibleForTesting final Map<Sha256Hash, Transaction> pending;
-    @VisibleForTesting final Map<Sha256Hash, Transaction> unspent;
-    @VisibleForTesting final Map<Sha256Hash, Transaction> spent;
-    @VisibleForTesting final Map<Sha256Hash, Transaction> dead;
+    private final Map<Sha256Hash, Transaction> pending;
+    private final Map<Sha256Hash, Transaction> unspent;
+    private final Map<Sha256Hash, Transaction> spent;
+    private final Map<Sha256Hash, Transaction> dead;
 
     // All transactions together.
     protected final Map<Sha256Hash, Transaction> transactions;
@@ -149,7 +148,7 @@ public class Wallet extends BaseTaggableObject
 
     // The key chain group is not thread safe, and generally the whole hierarchy of objects should not be mutated
     // outside the wallet lock. So don't expose this object directly via any accessors!
-    @GuardedBy("keyChainGroupLock") protected KeyChainGroup keyChainGroup;
+    @GuardedBy("keyChainGroupLock") private KeyChainGroup keyChainGroup;
 
     // A list of scripts watched by this wallet.
     @GuardedBy("keyChainGroupLock") private Set<Script> watchedScripts;
@@ -336,7 +335,7 @@ public class Wallet extends BaseTaggableObject
      * <p>Transaction signer should be fully initialized before adding to the wallet, otherwise {@link IllegalStateException}
      * will be thrown</p>
      */
-    public void addTransactionSigner(TransactionSigner signer) {
+    public final void addTransactionSigner(TransactionSigner signer) {
         lock.lock();
         try {
             if (signer.isReady())
@@ -580,6 +579,16 @@ public class Wallet extends BaseTaggableObject
         keyChainGroupLock.lock();
         try {
             return keyChainGroup.numKeys();
+        } finally {
+            keyChainGroupLock.unlock();
+        }
+    }
+
+    @VisibleForTesting
+    public int getKeyChainGroupCombinedKeyLookaheadEpochs() {
+        keyChainGroupLock.lock();
+        try {
+            return keyChainGroup.getCombinedKeyLookaheadEpochs();
         } finally {
             keyChainGroupLock.unlock();
         }
@@ -1616,7 +1625,7 @@ public class Wallet extends BaseTaggableObject
             Coin valueSentToMe = tx.getValueSentToMe(this);
             Coin valueSentFromMe = tx.getValueSentFromMe(this);
             if (log.isInfoEnabled()) {
-                log.info(String.format("Received a pending transaction %s that spends %s from our own wallet," +
+                log.info(String.format(Locale.US, "Received a pending transaction %s that spends %s from our own wallet," +
                         " and sends us %s", tx.getHashAsString(), valueSentFromMe.toFriendlyString(),
                         valueSentToMe.toFriendlyString()));
             }
@@ -2102,7 +2111,7 @@ public class Wallet extends BaseTaggableObject
         // Now make sure it ends up in the right pool. Also, handle the case where this TX is double-spending
         // against our pending transactions. Note that a tx may double spend our pending transactions and also send
         // us money/spend our money.
-        boolean hasOutputsToMe = tx.getValueSentToMe(this, true).signum() > 0;
+        boolean hasOutputsToMe = tx.getValueSentToMe(this).signum() > 0;
         if (hasOutputsToMe) {
             // Needs to go into either unspent or spent (if the outputs were already spent by a pending tx).
             if (tx.isEveryOwnedOutputSpent(this)) {
@@ -2190,7 +2199,7 @@ public class Wallet extends BaseTaggableObject
                 // Otherwise we saw a transaction spend our coins, but we didn't try and spend them ourselves yet.
                 // The outputs are already marked as spent by the connect call above, so check if there are any more for
                 // us to use. Move if not.
-                Transaction connected = checkNotNull(input.getOutpoint().fromTx);
+                Transaction connected = checkNotNull(input.getConnectedTransaction());
                 log.info("  marked {} as spent", input.getOutpoint());
                 maybeMovePool(connected, "prevtx");
                 // Just because it's connected doesn't mean it's actually ours: sometimes we have total visibility.
@@ -2245,7 +2254,7 @@ public class Wallet extends BaseTaggableObject
             spent.remove(tx.getHash());
             addWalletTransaction(Pool.DEAD, tx);
             for (TransactionInput deadInput : tx.getInputs()) {
-                Transaction connected = deadInput.getOutpoint().fromTx;
+                Transaction connected = deadInput.getConnectedTransaction();
                 if (connected == null) continue;
                 if (connected.getConfidence().getConfidenceType() != ConfidenceType.DEAD && deadInput.getConnectedOutput().getSpentBy() != null && deadInput.getConnectedOutput().getSpentBy().equals(deadInput)) {
                     checkState(myUnspents.add(deadInput.getConnectedOutput()));
@@ -2273,13 +2282,13 @@ public class Wallet extends BaseTaggableObject
         for (TransactionInput input : overridingTx.getInputs()) {
             TransactionInput.ConnectionResult result = input.connect(unspent, TransactionInput.ConnectMode.DISCONNECT_ON_CONFLICT);
             if (result == TransactionInput.ConnectionResult.SUCCESS) {
-                maybeMovePool(input.getOutpoint().fromTx, "kill");
+                maybeMovePool(input.getConnectedTransaction(), "kill");
                 myUnspents.remove(input.getConnectedOutput());
                 log.info("Removing from UNSPENTS: {}", input.getConnectedOutput());
             } else {
                 result = input.connect(spent, TransactionInput.ConnectMode.DISCONNECT_ON_CONFLICT);
                 if (result == TransactionInput.ConnectionResult.SUCCESS) {
-                    maybeMovePool(input.getOutpoint().fromTx, "kill");
+                    maybeMovePool(input.getConnectedTransaction(), "kill");
                     myUnspents.remove(input.getConnectedOutput());
                     log.info("Removing from UNSPENTS: {}", input.getConnectedOutput());
                 }
@@ -2693,9 +2702,7 @@ public class Wallet extends BaseTaggableObject
         try {
             checkArgument(numTransactions >= 0);
             // Firstly, put all transactions into an array.
-            int size = getPoolSize(Pool.UNSPENT) +
-                    getPoolSize(Pool.SPENT) +
-                    getPoolSize(Pool.PENDING);
+            int size = unspent.size() + spent.size() + pending.size();
             if (numTransactions > size || numTransactions == 0) {
                 numTransactions = size;
             }
@@ -2891,7 +2898,8 @@ public class Wallet extends BaseTaggableObject
         }
     }
 
-    int getPoolSize(WalletTransaction.Pool pool) {
+    @VisibleForTesting
+    public int getPoolSize(WalletTransaction.Pool pool) {
         lock.lock();
         try {
             switch (pool) {
@@ -2903,6 +2911,26 @@ public class Wallet extends BaseTaggableObject
                     return pending.size();
                 case DEAD:
                     return dead.size();
+            }
+            throw new RuntimeException("Unreachable");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @VisibleForTesting
+    public boolean poolContainsTxHash(final WalletTransaction.Pool pool, final Sha256Hash txHash) {
+        lock.lock();
+        try {
+            switch (pool) {
+                case UNSPENT:
+                    return unspent.containsKey(txHash);
+                case SPENT:
+                    return spent.containsKey(txHash);
+                case PENDING:
+                    return pending.containsKey(txHash);
+                case DEAD:
+                    return dead.containsKey(txHash);
             }
             throw new RuntimeException("Unreachable");
         } finally {
@@ -2942,19 +2970,19 @@ public class Wallet extends BaseTaggableObject
             StringBuilder builder = new StringBuilder();
             Coin estimatedBalance = getBalance(BalanceType.ESTIMATED);
             Coin availableBalance = getBalance(BalanceType.AVAILABLE_SPENDABLE);
-            builder.append(String.format("Wallet containing %s BTC (spendable: %s BTC) in:%n",
+            builder.append(String.format(Locale.US, "Wallet containing %s BTC (spendable: %s BTC) in:%n",
                     estimatedBalance.toPlainString(), availableBalance.toPlainString()));
-            builder.append(String.format("  %d pending transactions%n", pending.size()));
-            builder.append(String.format("  %d unspent transactions%n", unspent.size()));
-            builder.append(String.format("  %d spent transactions%n", spent.size()));
-            builder.append(String.format("  %d dead transactions%n", dead.size()));
+            builder.append(String.format(Locale.US, "  %d pending transactions%n", pending.size()));
+            builder.append(String.format(Locale.US, "  %d unspent transactions%n", unspent.size()));
+            builder.append(String.format(Locale.US, "  %d spent transactions%n", spent.size()));
+            builder.append(String.format(Locale.US, "  %d dead transactions%n", dead.size()));
             final Date lastBlockSeenTime = getLastBlockSeenTime();
             final String lastBlockSeenTimeStr = lastBlockSeenTime == null ? "time unknown" : lastBlockSeenTime.toString();
-            builder.append(String.format("Last seen best block: %d (%s): %s%n",
+            builder.append(String.format(Locale.US, "Last seen best block: %d (%s): %s%n",
                     getLastBlockSeenHeight(), lastBlockSeenTimeStr, getLastBlockSeenHash()));
             final KeyCrypter crypter = keyChainGroup.getKeyCrypter();
             if (crypter != null)
-                builder.append(String.format("Encryption: %s%n", crypter));
+                builder.append(String.format(Locale.US, "Encryption: %s%n", crypter));
             if (isWatching())
                 builder.append("Wallet is watching.\n");
 
@@ -2962,7 +2990,7 @@ public class Wallet extends BaseTaggableObject
             builder.append("\nKeys:\n");
             final long keyRotationTime = vKeyRotationTimestamp * 1000;
             if (keyRotationTime > 0)
-                builder.append(String.format("Key rotation time: %s\n", Utils.dateTimeFormat(keyRotationTime)));
+                builder.append(String.format(Locale.US, "Key rotation time: %s\n", Utils.dateTimeFormat(keyRotationTime)));
             builder.append(keyChainGroup.toString(includePrivateKeys));
 
             if (!watchedScripts.isEmpty()) {
@@ -3643,6 +3671,24 @@ public class Wallet extends BaseTaggableObject
             return req;
         }
 
+        public static SendRequest toCLTVPaymentChannel(NetworkParameters params, Date releaseTime, ECKey from, ECKey to, Coin value) {
+            long time = releaseTime.getTime() / 1000L;
+            checkArgument(time >= Transaction.LOCKTIME_THRESHOLD, "Release time was too small");
+            return toCLTVPaymentChannel(params, BigInteger.valueOf(time), from, to, value);
+        }
+
+        public static SendRequest toCLTVPaymentChannel(NetworkParameters params, long lockTime, ECKey from, ECKey to, Coin value) {
+            return toCLTVPaymentChannel(params, BigInteger.valueOf(lockTime), from, to, value);
+        }
+
+        private static SendRequest toCLTVPaymentChannel(NetworkParameters params, BigInteger time, ECKey from, ECKey to, Coin value) {
+            SendRequest req = new SendRequest();
+            Script output = ScriptBuilder.createCLTVPaymentChannelOutput(time, from, to);
+            req.tx = new Transaction(params);
+            req.tx.addOutput(value, output);
+            return req;
+        }
+
         /** Copy data from payment request. */
         public SendRequest fromPaymentDetails(PaymentDetails paymentDetails) {
             if (paymentDetails.hasMemo())
@@ -3692,11 +3738,11 @@ public class Wallet extends BaseTaggableObject
      * @param address The Bitcoin address to send the money to.
      * @param value How much currency to send.
      * @return either the created Transaction or null if there are insufficient coins.
-     * coins as spent until commitTx is called on the result.
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public Transaction createSend(Address address, Coin value) throws InsufficientMoneyException {
         SendRequest req = SendRequest.to(address, value);
@@ -3715,9 +3761,10 @@ public class Wallet extends BaseTaggableObject
      * @return the Transaction that was created
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
      * @throws IllegalArgumentException if you try and complete the same SendRequest twice
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public Transaction sendCoinsOffline(SendRequest request) throws InsufficientMoneyException {
         lock.lock();
@@ -3751,9 +3798,10 @@ public class Wallet extends BaseTaggableObject
      * @param value How much value to send.
      * @return An object containing the transaction that was created, and a future for the broadcast of it.
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public SendResult sendCoins(TransactionBroadcaster broadcaster, Address to, Coin value) throws InsufficientMoneyException {
         SendRequest request = SendRequest.to(to, value);
@@ -3776,9 +3824,10 @@ public class Wallet extends BaseTaggableObject
      * @return An object containing the transaction that was created, and a future for the broadcast of it.
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
      * @throws IllegalArgumentException if you try and complete the same SendRequest twice
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public SendResult sendCoins(TransactionBroadcaster broadcaster, SendRequest request) throws InsufficientMoneyException {
         // Should not be locked here, as we're going to call into the broadcaster and that might want to hold its
@@ -3809,9 +3858,10 @@ public class Wallet extends BaseTaggableObject
      * @throws IllegalStateException if no transaction broadcaster has been configured.
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
      * @throws IllegalArgumentException if you try and complete the same SendRequest twice
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public SendResult sendCoins(SendRequest request) throws InsufficientMoneyException {
         TransactionBroadcaster broadcaster = vTransactionBroadcaster;
@@ -3828,9 +3878,10 @@ public class Wallet extends BaseTaggableObject
      * @return The {@link Transaction} that was created or null if there was insufficient balance to send the coins.
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
      * @throws IllegalArgumentException if you try and complete the same SendRequest twice
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public Transaction sendCoins(Peer peer, SendRequest request) throws InsufficientMoneyException {
         Transaction tx = sendCoinsOffline(request);
@@ -3838,16 +3889,27 @@ public class Wallet extends BaseTaggableObject
         return tx;
     }
 
+    /**
+     * Class of exceptions thrown in {@link Wallet#completeTx(SendRequest)}.
+     */
     public static class CompletionException extends RuntimeException {}
+    /**
+     * Thrown if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile).
+     */
     public static class DustySendRequested extends CompletionException {}
+    /**
+     * Thrown if there is more than one OP_RETURN output for the resultant transaction.
+     */
     public static class MultipleOpReturnRequested extends CompletionException {}
-
     /**
      * Thrown when we were trying to empty the wallet, and the total amount of money we were trying to empty after
      * being reduced for the fee was smaller than the min payment. Note that the missing field will be null in this
      * case.
      */
     public static class CouldNotAdjustDownwards extends CompletionException {}
+    /**
+     * Thrown if the resultant transaction is too big for Bitcoin to process. Try breaking up the amounts of value.
+     */
     public static class ExceededMaxTransactionSize extends CompletionException {}
 
     /**
@@ -3857,9 +3919,10 @@ public class Wallet extends BaseTaggableObject
      * @param req a SendRequest that contains the incomplete transaction and details for how to make it valid.
      * @throws InsufficientMoneyException if the request could not be completed due to not enough balance.
      * @throws IllegalArgumentException if you try and complete the same SendRequest twice
-     * @throws DustySendRequested if the resultant transaction would violate the dust rules (an output that's too small to be worthwhile)
+     * @throws DustySendRequested if the resultant transaction would violate the dust rules.
      * @throws CouldNotAdjustDownwards if emptying the wallet was requested and the output can't be shrunk for fees without violating a protocol rule.
-     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process (try breaking up the amounts of value)
+     * @throws ExceededMaxTransactionSize if the resultant transaction is too big for Bitcoin to process.
+     * @throws MultipleOpReturnRequested if there is more than one OP_RETURN output for the resultant transaction.
      */
     public void completeTx(SendRequest req) throws InsufficientMoneyException {
         lock.lock();
@@ -4120,6 +4183,19 @@ public class Wallet extends BaseTaggableObject
                 if (key != null && (key.isEncrypted() || key.hasPrivKey()))
                     return true;
             }
+        } else if (script.isSentToCLTVPaymentChannel()) {
+            // Any script for which we are the recipient or sender counts.
+            byte[] sender = script.getCLTVPaymentChannelSenderPubKey();
+            ECKey senderKey = findKeyFromPubKey(sender);
+            if (senderKey != null && (senderKey.isEncrypted() || senderKey.hasPrivKey())) {
+                return true;
+            }
+            byte[] recipient = script.getCLTVPaymentChannelRecipientPubKey();
+            ECKey recipientKey = findKeyFromPubKey(sender);
+            if (recipientKey != null && (recipientKey.isEncrypted() || recipientKey.hasPrivKey())) {
+                return true;
+            }
+            return false;
         }
         return false;
     }

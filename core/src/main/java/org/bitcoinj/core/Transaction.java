@@ -251,21 +251,6 @@ public class Transaction extends ChildMessage {
     }
 
     /**
-     * Calculates the sum of the outputs that are sending coins to a key in the wallet. The flag controls whether to
-     * include spent outputs or not.
-     */
-    Coin getValueSentToMe(TransactionBag transactionBag, boolean includeSpent) {
-        // This is tested in WalletTest.
-        Coin v = Coin.ZERO;
-        for (TransactionOutput o : outputs) {
-            if (!o.isMineOrWatched(transactionBag)) continue;
-            if (!includeSpent && !o.isAvailableForSpending()) continue;
-            v = v.add(o.getValue());
-        }
-        return v;
-    }
-
-    /**
      * Gets the sum of the inputs, regardless of who owns them.
      */
     public Coin getInputSum() {
@@ -308,7 +293,13 @@ public class Transaction extends ChildMessage {
      * Calculates the sum of the outputs that are sending coins to a key in the wallet.
      */
     public Coin getValueSentToMe(TransactionBag transactionBag) {
-        return getValueSentToMe(transactionBag, true);
+        // This is tested in WalletTest.
+        Coin v = Coin.ZERO;
+        for (TransactionOutput o : outputs) {
+            if (!o.isMineOrWatched(transactionBag)) continue;
+            v = v.add(o.getValue());
+        }
+        return v;
     }
 
     /**
@@ -636,7 +627,7 @@ public class Transaction extends ChildMessage {
     public String toString(@Nullable AbstractBlockChain chain) {
         // Basic info about the tx.
         StringBuilder s = new StringBuilder();
-        s.append(String.format("  %s: %s%n", getHashAsString(), getConfidence()));
+        s.append(String.format(Locale.US, "  %s: %s%n", getHashAsString(), getConfidence()));
         if (isTimeLocked()) {
             String time;
             if (lockTime < LOCKTIME_THRESHOLD) {
@@ -648,10 +639,10 @@ public class Transaction extends ChildMessage {
             } else {
                 time = new Date(lockTime*1000).toString();
             }
-            s.append(String.format("  time locked until %s%n", time));
+            s.append(String.format(Locale.US, "  time locked until %s%n", time));
         }
         if (inputs.size() == 0) {
-            s.append(String.format("  INCOMPLETE: No inputs!%n"));
+            s.append(String.format(Locale.US, "  INCOMPLETE: No inputs!%n"));
             return s.toString();
         }
         if (isCoinBase()) {
@@ -692,7 +683,7 @@ public class Transaction extends ChildMessage {
             } catch (Exception e) {
                 s.append("[exception: ").append(e.getMessage()).append("]");
             }
-            s.append(String.format("%n"));
+            s.append(String.format(Locale.US, "%n"));
         }
         for (TransactionOutput out : outputs) {
             s.append("     ");
@@ -712,11 +703,13 @@ public class Transaction extends ChildMessage {
             } catch (Exception e) {
                 s.append("[exception: ").append(e.getMessage()).append("]");
             }
-            s.append(String.format("%n"));
+            s.append(String.format(Locale.US, "%n"));
         }
         Coin fee = getFee();
         if (fee != null)
-            s.append("     fee  ").append(fee.toFriendlyString()).append(String.format("%n"));
+            s.append("     fee  ").append(fee.toFriendlyString()).append(String.format(Locale.US, "%n"));
+        if (purpose != null)
+            s.append("     prps ").append(purpose).append(String.format(Locale.US, "%n"));
         return s.toString();
     }
 
@@ -957,7 +950,7 @@ public class Transaction extends ChildMessage {
             for (int i = 0; i < inputs.size(); i++) {
                 inputScripts[i] = inputs.get(i).getScriptBytes();
                 inputSequenceNumbers[i] = inputs.get(i).getSequenceNumber();
-                inputs.get(i).setScriptBytes(TransactionInput.EMPTY_ARRAY);
+                inputs.get(i).clearScriptBytes();
             }
 
             // This step has no purpose beyond being synchronized with Bitcoin Core's bugs. OP_CODESEPARATOR

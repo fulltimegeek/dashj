@@ -17,6 +17,8 @@
 
 package org.bitcoinj.core;
 
+import android.util.Log;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,13 +92,11 @@ public abstract class Message {
         this.payload = payload;
         this.cursor = this.offset = offset;
         this.length = length;
-
         parse();
-
-        if (this.length == UNKNOWN_LENGTH)
-            checkState(false, "Length field has not been set in constructor for %s after parse.",
-                       getClass().getSimpleName());
-        
+        if (this.length == UNKNOWN_LENGTH) {
+            //checkState(false, "Length field has not been set in constructor for %s after parse.",
+                    //getClass().getSimpleName());
+        }
         if (SELF_CHECK) {
             selfCheck(payload, offset);
         }

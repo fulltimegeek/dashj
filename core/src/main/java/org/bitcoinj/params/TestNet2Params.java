@@ -32,26 +32,30 @@ public class TestNet2Params extends AbstractBitcoinNetParams {
     public TestNet2Params() {
         super();
         id = ID_TESTNET;
-        packetMagic = 0xfabfb5daL;
-        port = 18333;
-        addressHeader = 111;
-        p2shHeader = 196;
+        packetMagic = 0xcee2caffL;
+        port = 19999;
+        addressHeader = 139;
+        p2shHeader = 19;
         acceptableAddressCodes = new int[] { addressHeader, p2shHeader };
         interval = INTERVAL;
         targetTimespan = TARGET_TIMESPAN;
-        maxTarget = Utils.decodeCompactBits(0x1d0fffffL);
+        maxTarget = Utils.decodeCompactBits(0x1e0ffff0L);
         dumpedPrivateKeyHeader = 239;
-        genesisBlock.setTime(1296688602L);
-        genesisBlock.setDifficultyTarget(0x1d07fff8L);
-        genesisBlock.setNonce(384568319);
+        genesisBlock.setTime(1390666206L);
+        genesisBlock.setDifficultyTarget(0x1e0ffff0);
+        genesisBlock.setNonce(3861367235l);
         spendableCoinbaseDepth = 100;
         subsidyDecreaseBlockCount = 210000;
         String genesisHash = genesisBlock.getHashAsString();
-        checkState(genesisHash.equals("00000007199508e34a9ff81e6ec0c477a4cccff2a4767a8eee39c11db367b008"));
-        dnsSeeds = null;
+        checkState(genesisHash.equals("00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c"));
+        dnsSeeds = new String[] {
+                "testnet-seed.darkcoin.io",
+                "testnet-seed.darkcoin.qa",       //ddoesn't seem active so I've commented it out
+                "testnet-seed.darkcoin.io",
+        };
         addrSeeds = null;
-        bip32HeaderPub = 0x043587CF;
-        bip32HeaderPriv = 0x04358394;
+        bip32HeaderPub = 0x3a8061a0;
+        bip32HeaderPriv = 0x3a805837;
 
         majorityEnforceBlockUpgrade = TESTNET_MAJORITY_ENFORCE_BLOCK_UPGRADE;
         majorityRejectBlockOutdated = TESTNET_MAJORITY_REJECT_BLOCK_OUTDATED;
@@ -70,4 +74,6 @@ public class TestNet2Params extends AbstractBitcoinNetParams {
     public String getPaymentProtocolId() {
         return null;
     }
+
+
 }

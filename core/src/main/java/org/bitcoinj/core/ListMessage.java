@@ -17,6 +17,8 @@
 
 package org.bitcoinj.core;
 
+import android.util.Log;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -66,18 +68,21 @@ public abstract class ListMessage extends Message {
         items.remove(index);
         length += VarInt.sizeOf(items.size()) - InventoryItem.MESSAGE_LENGTH;
     }
-
+    final static String TAG = "ListMessage.java";
     @Override
     protected void parse() throws ProtocolException {
         arrayLen = readVarInt();
-        if (arrayLen > MAX_INVENTORY_ITEMS)
+        if (arrayLen > MAX_INVENTORY_ITEMS) {
+            Log.w(TAG, "Too many items in INV message");
             throw new ProtocolException("Too many items in INV message: " + arrayLen);
+        }
         length = (int) (cursor - offset + (arrayLen * InventoryItem.MESSAGE_LENGTH));
 
         // An inv is vector<CInv> where CInv is int+hash. The int is either 1 or 2 for tx or block.
         items = new ArrayList<InventoryItem>((int) arrayLen);
         for (int i = 0; i < arrayLen; i++) {
             if (cursor + InventoryItem.MESSAGE_LENGTH > payload.length) {
+                Log.w(TAG,"Ran off the end of the INV");
                 throw new ProtocolException("Ran off the end of the INV");
             }
             int typeCode = (int) readUint32();
@@ -96,7 +101,47 @@ public abstract class ListMessage extends Message {
                 case 3:
                     type = InventoryItem.Type.FilteredBlock;
                     break;
+                case 4:
+                    type = InventoryItem.Type.TxLockRequest;
+                    break;
+                case 5:
+                    type = InventoryItem.Type.TxLockVote;
+                    break;
+                case 6:
+                    type = InventoryItem.Type.Spork;
+                    break;
+                case 7:
+                    type = InventoryItem.Type.MnWinner;
+                    break;
+                case 8:
+                    type = InventoryItem.Type.MnScanError;
+                    break;
+                case 9:
+                    type = InventoryItem.Type.MnBudgetVote;
+                    break;
+                case 10:
+                    type = InventoryItem.Type.MnBudgetProposal;
+                    break;
+                case 11:
+                    type = InventoryItem.Type.MnBudgetFinalized;
+                    break;
+                case 12:
+                    type = InventoryItem.Type.MnBudgetFinalizedVote;
+                    break;
+                case 13:
+                    type = InventoryItem.Type.MnQuorum;
+                    break;
+                case 14:
+                    type = InventoryItem.Type.MnAnnounce;
+                    break;
+                case 15:
+                    type = InventoryItem.Type.MnPing;
+                    break;
+                case 16:
+                    type = InventoryItem.Type.DSTX;
+                    break;
                 default:
+                    Log.w(TAG,"Unknown CInv type: "+typeCode);
                     throw new ProtocolException("Unknown CInv type: " + typeCode);
             }
             InventoryItem item = new InventoryItem(type, readHash());

@@ -29,7 +29,21 @@ public class InventoryItem {
         Error,
         Transaction,
         Block,
-        FilteredBlock
+        FilteredBlock,
+        TxLockRequest,
+        TxLockVote,
+        Spork,
+        MnWinner,
+        MnScanError,
+        MnBudgetVote,
+        MnBudgetProposal,
+        MnBudgetFinalized,
+        MnBudgetFinalizedVote,
+        MnQuorum,
+        MnAnnounce,
+        MnPing,
+        DSTX
+
     }
 
     public final Type type;
@@ -57,4 +71,5 @@ public class InventoryItem {
     public int hashCode() {
         return Objects.hashCode(type, hash);
     }
+
 }

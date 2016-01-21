@@ -17,6 +17,8 @@
 
 package org.bitcoinj.core;
 
+import android.util.Log;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +50,7 @@ public class BitcoinSerializer extends MessageSerializer {
     private final NetworkParameters params;
     private final boolean parseRetain;
 
-    private static final Map<Class<? extends Message>, String> names = new HashMap<Class<? extends Message>, String>();
+    public static Map<Class<? extends Message>, String> names = new HashMap<Class<? extends Message>, String>();
 
     static {
         names.put(VersionMessage.class, "version");
@@ -138,7 +140,7 @@ public class BitcoinSerializer extends MessageSerializer {
         // The checksum is the first 4 bytes of a SHA256 hash of the message payload. It isn't
         // present for all messages, notably, the first one on a connection.
         //
-        // Bitcoin Core ignores garbage before the magic header bytes. We have to do the same because
+        // Satoshi's implementation ignores garbage before the magic header bytes. We have to do the same because
         // sometimes it sends us stuff that isn't part of any message.
         seekPastMagicBytes(in);
         BitcoinPacketHeader header = new BitcoinPacketHeader(in);
@@ -203,9 +205,11 @@ public class BitcoinSerializer extends MessageSerializer {
             message = new GetBlocksMessage(params, payloadBytes);
         } else if (command.equals("getheaders")) {
             message = new GetHeadersMessage(params, payloadBytes);
+        } else if (command.equals("ix")) {
+            message = makeTransaction(payloadBytes, 0, length, hash);
         } else if (command.equals("tx")) {
             message = makeTransaction(payloadBytes, 0, length, hash);
-        } else if (command.equals("addr")) {
+        }else if (command.equals("addr")) {
             message = makeAddressMessage(payloadBytes, length);
         } else if (command.equals("ping")) {
             message = new Ping(params, payloadBytes);
@@ -229,6 +233,10 @@ public class BitcoinSerializer extends MessageSerializer {
             return new UTXOsMessage(params, payloadBytes);
         } else if (command.equals("getutxos")) {
             return new GetUTXOsMessage(params, payloadBytes);
+        }else if (command.equals("dsq")) {
+            return new UnknownMessage(params, command, payloadBytes);
+        }else if (command.equals("ssc")) {
+            return new UnknownMessage(params, command, payloadBytes);
         } else {
             log.warn("No support for deserializing message with name {}", command);
             return new UnknownMessage(params, command, payloadBytes);

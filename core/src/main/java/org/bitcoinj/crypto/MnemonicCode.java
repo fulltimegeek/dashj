@@ -17,12 +17,12 @@
 
 package org.bitcoinj.crypto;
 
+import android.util.Log;
+
 import org.bitcoinj.core.Sha256Hash;
 import org.bitcoinj.core.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.base.Stopwatch;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -33,6 +33,9 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
+import dash.fulltimegeek.walletspv.DashGui;
+import dash.fulltimegeek.walletspv.R;
 
 import static org.bitcoinj.core.Utils.HEX;
 
@@ -47,7 +50,7 @@ public class MnemonicCode {
 
     private ArrayList<String> wordList;
 
-    private static final String BIP39_ENGLISH_RESOURCE_NAME = "mnemonic/wordlist/english.txt";
+    //private static final String BIP39_ENGLISH_RESOURCE_NAME = "mnemonic/wordlist/english.txt";
     private static final String BIP39_ENGLISH_SHA256 = "ad90bf3beb7b0eb7e5acd74727dc0da96e0a280a258354e7293fb7e211ac03db";
 
     /** UNIX time for when the BIP39 standard was finalised. This can be used as a default seed birthday. */
@@ -62,10 +65,12 @@ public class MnemonicCode {
             INSTANCE = new MnemonicCode();
         } catch (FileNotFoundException e) {
             // We expect failure on Android. The developer has to set INSTANCE themselves.
+            Log.e("Mnenomic.java", "Couldn't find word list.");
+            e.printStackTrace();
             if (!Utils.isAndroidRuntime())
-                log.error("Could not find word list", e);
+                Log.e("Mnenomic.java", "Couldn't find word list.");
         } catch (IOException e) {
-            log.error("Failed to load word list", e);
+            Log.e("Mnenomic.java", "Failed to load word list");
         }
     }
 
@@ -75,9 +80,10 @@ public class MnemonicCode {
     }
 
     private static InputStream openDefaultWords() throws IOException {
-        InputStream stream = MnemonicCode.class.getResourceAsStream(BIP39_ENGLISH_RESOURCE_NAME);
+        InputStream stream = DashGui.activity.getResources().openRawResource(R.raw.english);
+
         if (stream == null)
-            throw new FileNotFoundException(BIP39_ENGLISH_RESOURCE_NAME);
+            throw new FileNotFoundException("R.raw.english.txt");
         return stream;
     }
 
@@ -103,8 +109,10 @@ public class MnemonicCode {
         if (wordListDigest != null) {
             byte[] digest = md.digest();
             String hexdigest = HEX.encode(digest);
-            if (!hexdigest.equals(wordListDigest))
+            if (!hexdigest.equals(wordListDigest)) {
+                Log.e(TAG,"hexdigest must be:"+hexdigest);
                 throw new IllegalArgumentException("wordlist digest mismatch");
+            }
         }
     }
 
@@ -130,10 +138,9 @@ public class MnemonicCode {
         String pass = Utils.join(words);
         String salt = "mnemonic" + passphrase;
 
-        final Stopwatch watch = Stopwatch.createStarted();
+        long start = System.currentTimeMillis();
         byte[] seed = PBKDF2SHA512.derive(pass, salt, PBKDF2_ROUNDS, 64);
-        watch.stop();
-        log.info("PBKDF2 took {}", watch);
+        log.info("PBKDF2 took {}ms", System.currentTimeMillis() - start);
         return seed;
     }
 
@@ -187,19 +194,24 @@ public class MnemonicCode {
         return entropy;
     }
 
+    final static String TAG = "MnemonicCode.java";
     /**
      * Convert entropy data to mnemonic word list.
      */
     public List<String> toMnemonic(byte[] entropy) throws MnemonicException.MnemonicLengthException {
-        if (entropy.length % 4 > 0)
+        if (entropy.length % 4 > 0) {
+            Log.e(TAG, "Entropy length not multiple of 32 bits.");
             throw new MnemonicException.MnemonicLengthException("Entropy length not multiple of 32 bits.");
+        }
 
-        if (entropy.length == 0)
+        if (entropy.length == 0) {
+            Log.e(TAG, "Entropy is empty");
             throw new MnemonicException.MnemonicLengthException("Entropy is empty.");
+        }
 
         // We take initial entropy of ENT bits and compute its
         // checksum by taking first ENT / 32 bits of its SHA256 hash.
-
+        Log.i(TAG, "Creating Mnemonic 1");
         byte[] hash = Sha256Hash.hash(entropy);
         boolean[] hashBits = bytesToBits(hash);
         
@@ -218,6 +230,7 @@ public class MnemonicCode {
 
         ArrayList<String> words = new ArrayList<String>();
         int nwords = concatBits.length / 11;
+        Log.i(TAG, "Creating Mnemonic 2");
         for (int i = 0; i < nwords; ++i) {
             int index = 0;
             for (int j = 0; j < 11; ++j) {
@@ -227,7 +240,7 @@ public class MnemonicCode {
             }
             words.add(this.wordList.get(index));
         }
-            
+        Log.i(TAG, "Creating Mnemonic 3");
         return words;        
     }
 

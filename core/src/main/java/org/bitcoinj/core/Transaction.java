@@ -92,7 +92,10 @@ public class Transaction extends ChildMessage {
     /**
      * If fee is lower than this value (in satoshis), Bitcoin Core will treat it as if there were no fee.
      */
-    public static final Coin REFERENCE_DEFAULT_MIN_TX_FEE = Coin.valueOf(5000); // satoshis
+    public static final Coin DEFAULT_MIN_TX_FEE = Coin.valueOf(10000);
+    public static final Coin DEFAULT_MIN_IX_FEE = Coin.valueOf(1000000);
+    public static Coin REFERENCE_DEFAULT_MIN_TX_FEE = DEFAULT_MIN_TX_FEE;
+
 
     /**
      * Any standard (ie pay-to-address) output smaller than this value (in satoshis) will most likely be rejected by the network.

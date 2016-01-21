@@ -16,6 +16,8 @@
 
 package org.bitcoinj.core;
 
+import android.util.Log;
+
 import com.google.common.base.*;
 import com.google.common.base.Objects;
 import org.bitcoinj.core.listeners.*;
@@ -489,7 +491,7 @@ public class Peer extends PeerSocketHandler {
                 peerVersion,
                 vPeerVersionMessage.subVer,
                 vPeerVersionMessage.localServices,
-                String.format(Locale.US, "%tF %tT", peerTime, peerTime),
+                String.format("%tF %tT", peerTime, peerTime),
                 vPeerVersionMessage.bestHeight);
         // Now it's our turn ...
         // Send an ACK message stating we accept the peers protocol version.
@@ -1063,9 +1065,9 @@ public class Peer extends PeerSocketHandler {
         }
     }
 
+
     protected void processInv(InventoryMessage inv) {
         List<InventoryItem> items = inv.getItems();
-
         // Separate out the blocks and transactions, we'll handle them differently
         List<InventoryItem> transactions = new LinkedList<InventoryItem>();
         List<InventoryItem> blocks = new LinkedList<InventoryItem>();
@@ -1078,7 +1080,33 @@ public class Peer extends PeerSocketHandler {
                 case Block:
                     blocks.add(item);
                     break;
+                case MnWinner:
+                    //Log.w(TAG, "Not implemented: " + item.type+" | "+item.toString());
+                case MnPing:
+                    //Log.w(TAG, "Not implemented: " + item.type+" | "+item.toString());
+                    break;
+                case MnAnnounce:
+                    //Log.w(TAG, "Not implemented: " + item.type+" | "+item.toString());
+                    break;
+                case MnBudgetProposal:
+                    //Log.w(TAG, "Not implemented: " + item.type+" | "+item.toString());
+                    break;
+                case MnBudgetFinalized:
+                    //Log.w(TAG, "Not implemented: " + item.type+" | "+item.toString());
+                    break;
+                case MnBudgetVote:
+                    //Log.w(TAG, "Not implemented: " + item.type+" | "+item.toString());
+                    break;
+                case TxLockVote:
+                    //Log.w(TAG, "Not implemented: "+ item.type+" | "+item.toString());
+                    break;
+                case TxLockRequest:
+                    transactions.add(item);
+                    break;
+                case DSTX:
+                    break;
                 default:
+                    //Log.e(TAG, "Not implemented: " + item.type);
                     throw new IllegalStateException("Not implemented: " + item.type);
             }
         }
@@ -1113,6 +1141,8 @@ public class Peer extends PeerSocketHandler {
             //
             // The line below can trigger confidence listeners.
             TransactionConfidence conf = context.getConfidenceTable().seen(item.hash, this.getAddress());
+            //if(item.type == InventoryItem.Type.TxLockRequest)
+            //    conf.setIX(true);
             if (conf.numBroadcastPeers() > 1) {
                 // Some other peer already announced this so don't download.
                 it.remove();
@@ -1152,9 +1182,9 @@ public class Peer extends PeerSocketHandler {
                         // requesting a subset of what we already requested, which can lead to parallel chain downloads
                         // and other nastyness. So we just do a quick removal of redundant getdatas here too.
                         //
-                        // Note that as of June 2012 Bitcoin Core won't actually ever interleave blocks pushed as
+                        // Note that as of June 2012 the Satoshi client won't actually ever interleave blocks pushed as
                         // part of chain download with newly announced blocks, so it should always be taken care of by
-                        // the duplicate check in blockChainDownloadLocked(). But Bitcoin Core may change in future so
+                        // the duplicate check in blockChainDownloadLocked(). But the satoshi client may change in future so
                         // it's better to be safe here.
                         if (!pendingBlockDownloads.contains(item.hash)) {
                             if (vPeerVersionMessage.isBloomFilteringSupported() && useFilteredBlocks) {
